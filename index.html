@@ -50,11 +50,86 @@ const SFX={jump:()=>tone(300,.18,'square',.1,0,700),throw:()=>tone(700,.15,'tria
 const net={on:false,host:false,peer:null,conn:null,gid:0,ls:0,last:0,fp:0,tok:0,iv:null,lp:null,code:''};
 const PFX='firkihesti-v1-';
 const ICE={debug:0,config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'},{urls:'stun:global.stun.twilio.com:3478'},{urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}]}};
+// ===== ONLINE HYBRID: WebRTC langsung (STUN/TURN) + cadangan relay MQTT publik. Tanpa akun. =====
+const BRK=['wss://mqtt.eclipseprojects.io:443/mqtt','wss://broker.emqx.io:8084/mqtt','wss://broker.hivemq.com:8884/mqtt','wss://test.mosquitto.org:8081/mqtt'];
+const MQ_SRC=['https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js','https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js','https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.10.1/mqtt.min.js'];
+const RTC_CFG={iceServers:[{urls:['stun:ss-turn1.xirsys.com']},{username:'AiBmDYocnjjDT1w9_k8qXr7TLRObtgL3eaVvBbrQy6ZbXyF0JSB2YpHVPA63TbZfAAAAAGrLRy5tYXp0dA==',credential:'d82a417a-c54c-11f1-a811-0242ac140004',urls:['turn:ss-turn1.xirsys.com:80?transport=udp','turn:ss-turn1.xirsys.com:3478?transport=udp','turn:ss-turn1.xirsys.com:80?transport=tcp','turn:ss-turn1.xirsys.com:3478?transport=tcp','turns:ss-turn1.xirsys.com:443?transport=tcp','turns:ss-turn1.xirsys.com:5349?transport=tcp']},{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun.cloudflare.com:3478'}]};
+function mkEm(o){const h={};o.on=(e,f)=>{(h[e]=h[e]||[]).push(f);return o};o.emit=(e,...a)=>{(h[e]||[]).slice().forEach(f=>{try{f(...a)}catch(x){console.error(x)}})};return o}
+function rid(){return Math.random().toString(36).slice(2,10)}
+function mqDec(b){try{return JSON.parse(b.toString())}catch(e){return null}}
+function mqPub(c,t,m){try{c.publish(t,JSON.stringify(m),{qos:0})}catch(e){}}
+function mqNew(u){return mqtt.connect(u,{clientId:'fh'+rid()+rid(),clean:true,reconnectPeriod:0,connectTimeout:3500,keepalive:30})}
+function mqKeep(c){try{c.options.reconnectPeriod=2000}catch(e){}}
+const chOk=ch=>!!ch&&ch.readyState==='open';
+function p2pUp(c,isHost){
+ if(typeof RTCPeerConnection==='undefined')return;
+ let pc,pend=[],hasRd=false;
+ try{pc=new RTCPeerConnection(RTC_CFG)}catch(e){return}
+ c.pc=pc;
+ const sig=d=>c.sigOut(d);
+ const setCh=ch=>{if(ch.label==='r')c.rch=ch;else{c.uch=ch;c.dataChannel=ch}
+  ch.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(x){return}c.emit('data',m)}};
+ pc.onicecandidate=e=>{if(e.candidate)sig({c:e.candidate})};
+ c.on('sig',async d=>{try{
+  if(d.o){await pc.setRemoteDescription(d.o);hasRd=true;const a=await pc.createAnswer();await pc.setLocalDescription(a);sig({a:pc.localDescription});pend.forEach(x=>pc.addIceCandidate(x).catch(()=>{}));pend=[]}
+  else if(d.a){await pc.setRemoteDescription(d.a);hasRd=true;pend.forEach(x=>pc.addIceCandidate(x).catch(()=>{}));pend=[]}
+  else if(d.c){if(hasRd)await pc.addIceCandidate(d.c);else pend.push(d.c)}}catch(e){}});
+ if(isHost){setCh(pc.createDataChannel('r',{ordered:true}));setCh(pc.createDataChannel('u',{ordered:false,maxRetransmits:0}));
+  pc.createOffer().then(o=>pc.setLocalDescription(o)).then(()=>sig({o:pc.localDescription})).catch(()=>{})}
+ else pc.ondatachannel=e=>setCh(e.channel)}
+function MPeer(id){
+ const p=mkEm(this);const me=this;this.id=id||('g'+rid());this.destroyed=false;this.disconnected=false;
+ const host=!!id,cls=[],conns={},tIn='fhgame/'+this.id+'/in';
+ this.reconnect=()=>{};
+ this.destroy=()=>{if(me.destroyed)return;me.destroyed=true;Object.keys(conns).forEach(k=>{try{conns[k].close()}catch(e){}});cls.forEach(c=>{try{c.end(true)}catch(e){}})};
+ function mkConn(remote,cl,tOut,mine){const c=mkEm({open:false,peer:remote,cl:cl,closed:false,lastSt:0});
+  c.isP2P=()=>chOk(c.rch)&&chOk(c.uch);
+  c.sigOut=d=>{if(c.cl)mqPub(c.cl,tOut,{k:'sig',g:mine,d})};
+  c.send=m=>{if(!c.open)return;const st=m&&m.t==='st',s=JSON.stringify(m),ch=st?c.uch:c.rch;
+   if(c.isP2P()){try{ch.send(s);return}catch(e){}}
+   if(st){const n=Date.now();if(n-c.lastSt<50)return;c.lastSt=n}
+   if(c.cl)try{c.cl.publish(tOut,JSON.stringify({k:'m',g:mine,d:m}),{qos:0})}catch(e){}};
+  c.fin=()=>{if(c.closed)return;c.closed=true;c.open=false;try{c.pc&&c.pc.close()}catch(e){}c.emit('close')};
+  c.close=()=>{if(c.closed)return;if(c.cl)mqPub(c.cl,tOut,{k:'bye',g:mine});c.fin()};
+  return c}
+ if(host){
+  let opened=false,fails=0;
+  const bad=()=>{fails++;if(fails>=BRK.length&&!opened&&!me.destroyed)p.emit('error',{type:'network'})};
+  BRK.forEach(u=>{let c,ok=0;try{c=mqNew(u)}catch(e){return bad()}cls.push(c);
+   c.on('error',()=>{});
+   c.on('connect',()=>{if(me.destroyed)return;c.subscribe(tIn,{qos:0},err=>{if(err||ok)return;ok=1;mqKeep(c);if(!opened){opened=true;p.emit('open',me.id)}})});
+   c.on('close',()=>{if(!ok&&!c._bd){c._bd=1;bad()}});
+   c.on('message',(t,b)=>{if(t!==tIn)return;const m=mqDec(b);if(!m||!m.g)return;const tg='fhgame/'+me.id+'/g/'+m.g;
+    if(m.k==='hello'){let cn=conns[m.g];if(!cn){cn=mkConn(m.g,c,tg,'h');cn.open=true;conns[m.g]=cn;cn.on('close',()=>{delete conns[m.g]});p.emit('connection',cn);mqPub(c,tg,{k:'ack'});if(!cn.closed)p2pUp(cn,true);setTimeout(()=>cn.emit('open'),0)}else{cn.cl=c;mqPub(c,tg,{k:'ack'})}}
+    else if(m.k==='m'){const cn=conns[m.g];if(cn)cn.emit('data',m.d)}
+    else if(m.k==='sig'){const cn=conns[m.g];if(cn)cn.emit('sig',m.d)}
+    else if(m.k==='bye'){const cn=conns[m.g];if(cn)cn.fin()}})})
+ }else setTimeout(()=>{if(!me.destroyed)p.emit('open',me.id)},0);
+ this.connect=hostId=>{
+  const gid=me.id,tHost='fhgame/'+hostId+'/in',tMe='fhgame/'+hostId+'/g/'+gid;
+  const conn=mkConn(hostId,null,tHost,gid);let any=0,dead=0,errd=0;const list=[];
+  const err=t=>{if(errd||conn.open||me.destroyed)return;errd=1;p.emit('error',{type:t})};
+  BRK.forEach(u=>{let cl,okc=0,iv=null;
+   try{cl=mqNew(u)}catch(e){dead++;if(dead>=BRK.length)err('network');return}
+   cls.push(cl);list.push(cl);
+   cl.on('error',()=>{});
+   cl.on('close',()=>{clearInterval(iv);if(!okc){dead++;if(dead>=BRK.length)err('network')}});
+   cl.on('message',(t,b)=>{if(t!==tMe)return;const m=mqDec(b);if(!m)return;
+    if(m.k==='ack'){if(!conn.open&&!conn.closed&&!errd){conn.cl=cl;conn.open=true;mqKeep(cl);list.forEach(o=>{if(o!==cl)try{o.end(true)}catch(e){}});p2pUp(conn,false);conn.emit('open')}}
+    else if(conn.cl===cl){if(m.k==='m')conn.emit('data',m.d);else if(m.k==='sig')conn.emit('sig',m.d);else if(m.k==='bye')conn.fin()}});
+   cl.on('connect',()=>{any=1;okc=1;cl.subscribe(tMe,{qos:0},e=>{if(e)return;const hi=()=>{if(!conn.open&&!conn.closed)mqPub(cl,tHost,{k:'hello',g:gid})};hi();iv=setInterval(hi,1000)})})});
+  setTimeout(()=>err(any?'peer-unavailable':'network'),18000);
+  return conn}
+}
+function loadPeer(){if(window.mqtt&&window.Peer)return Promise.resolve();if(net.lp)return net.lp;
+ net.lp=new Promise((res,rej)=>{let i=0;const nx=()=>{if(window.mqtt){window.Peer=MPeer;return res()}if(i>=MQ_SRC.length){net.lp=null;return rej()}const sc=document.createElement('script');sc.src=MQ_SRC[i++];sc.onload=()=>window.mqtt?(window.Peer=MPeer,res()):nx();sc.onerror=nx;document.head.appendChild(sc)};nx()});return net.lp}
+setInterval(()=>{try{if(!net.on||!net.conn||!net.conn.isP2P)return;const md=net.conn.isP2P()?' ⚡ Langsung':' 🌐 Relay';document.querySelectorAll('.badge').forEach(b=>{const t=b.textContent.replace(/ [⚡🌐].*$/,'');if(t.indexOf('Terhubung')>=0&&b.textContent!==t+md)b.textContent=t+md})}catch(e){}},1000);
+
 net.send=m=>{try{if(net.conn&&net.conn.open)net.conn.send(m)}catch(e){}};
 net.tx=m=>{try{const c=net.conn;if(!c||!c.open)return;if(c.dataChannel&&c.dataChannel.bufferedAmount>24000)return;c.send(m)}catch(e){}};
 net.inp=(k,v)=>{if(net.on&&!net.host)net.send({t:'i',k,v})};
 ['catch','miss','throw','hit'].forEach(k=>{const o=SFX[k];SFX[k]=(...a)=>{o(...a);if(net.on&&net.host)net.send({t:'s',n:k})}});
-function loadPeer(){if(window.Peer)return Promise.resolve();if(net.lp)return net.lp;const U=['https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js','https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js','https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js'];
+function loadPeerOld(){if(window.Peer)return Promise.resolve();if(net.lp)return net.lp;const U=['https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js','https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js','https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js'];
  net.lp=new Promise((res,rej)=>{let i=0;const nx=()=>{if(window.Peer)return res();if(i>=U.length){net.lp=null;return rej()}const sc=document.createElement('script');sc.src=U[i++];sc.onload=()=>window.Peer?res():nx();sc.onerror=nx;document.head.appendChild(sc)};nx()});return net.lp}
 net.reset=()=>{net.tok++;clearInterval(net.iv);net.iv=null;net.on=false;try{net.conn&&net.conn.close()}catch(e){}try{net.peer&&net.peer.destroy()}catch(e){}net.conn=null;net.peer=null}
 net.leave=()=>{net.send({t:'bye'});net.reset()}
@@ -93,7 +168,7 @@ function hostFlow(){net.reset();const tok=net.tok;modal('<h2>👧 Hesti</h2><p>M
    $('#wa2').onclick=()=>window.open('https://wa.me/?text='+encodeURIComponent('Yayang ❤️ ayo main game online! Pilih COWOK terus masukin kode: '+code),'_blank');$('#cx').onclick=lobby});
   p.on('connection',c=>{if(tok!==net.tok)return;if(net.conn){try{c.on('open',()=>c.close())}catch(e){}return}wire(c,tok,()=>{mode='P';go('mP')})});
   p.on('disconnected',()=>{if(tok===net.tok&&!net.on)try{p.reconnect()}catch(e){}});
-  p.on('error',e=>{if(tok!==net.tok)return;if(e.type==='unavailable-id'&&n<6){try{p.destroy()}catch(_){}return mk(n+1)}if(net.on)return;pErr('Server sedang bermasalah ('+(e.type||'error')+'). Coba lagi sebentar.')})}}
+  p.on('error',e=>{if(tok!==net.tok)return;if(e.type==='unavailable-id'&&n<6){try{p.destroy()}catch(_){}return mk(n+1)}if(net.on)return;pErr(e.type==='network'?'Tidak bisa menjangkau server. Matikan VPN, cek internet/kuota, lalu coba lagi.':'Server sedang bermasalah ('+(e.type||'error')+'). Coba lagi sebentar.')})}}
 function guestFlow(){net.reset();const tok=net.tok;net.host=false;modal('<h2>👦 Firki</h2><p>Masukkan kode 4 digit dari Hesti</p><input id="cd" class="ni" type="tel" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off"><p class="sm" id="stt"></p><button class="btn g" id="cn">🔗 Hubungkan</button><button class="btn b" id="cb">Kembali</button>');
  const inp=$('#cd'),st=$('#stt'),bt=$('#cn');inp.oninput=()=>{inp.value=inp.value.replace(/\D/g,'').slice(0,4)};$('#cb').onclick=lobby;setTimeout(()=>{try{inp.focus()}catch(e){}},200);
  bt.onclick=()=>{const code=inp.value;if(!/^\d{4}$/.test(code)){st.textContent='Kode harus 4 digit angka yah';return}bt.disabled=true;st.textContent='⏳ Menghubungkan...';let done=0;
@@ -102,7 +177,7 @@ function guestFlow(){net.reset();const tok=net.tok;net.host=false;modal('<h2>�
   loadPeer().then(()=>{if(tok!==net.tok)return;let p;try{p=new Peer(undefined,ICE)}catch(e){return fail('Gagal membuat koneksi.')}net.peer=p;
    p.on('open',()=>{if(tok!==net.tok)return;const c=p.connect(PFX+code,{reliable:true,serialization:'json'});wire(c,tok,()=>{done=1;clearTimeout(tm);mode='P';go('mP')})});
    p.on('disconnected',()=>{if(tok===net.tok&&!net.on)try{p.reconnect()}catch(e){}});
-   p.on('error',e=>{if(e.type==='peer-unavailable')fail('Kode tidak ditemukan. Cek lagi kodenya atau minta Hesti bikin ulang.');else if(!net.on)fail('Koneksi bermasalah ('+(e.type||'error')+'). Coba lagi.')})},()=>fail('Tidak bisa memuat modul online. Cek internet kamu.'))}}
+   p.on('error',e=>{if(e.type==='peer-unavailable')fail('Kode tidak ditemukan. Cek lagi kodenya atau minta Hesti bikin ulang.');else if(!net.on)fail(e.type==='network'?'Tidak bisa menjangkau server. Matikan VPN, cek internet/kuota, lalu coba lagi.':'Koneksi bermasalah ('+(e.type||'error')+'). Coba lagi.')})},()=>fail('Tidak bisa memuat modul online. Cek internet kamu.'))}}
 addEventListener('visibilitychange',()=>{if(!document.hidden&&net.peer&&net.peer.disconnected&&!net.peer.destroyed&&!net.on)try{net.peer.reconnect()}catch(e){}});
 
 // ---------- loading ----------
