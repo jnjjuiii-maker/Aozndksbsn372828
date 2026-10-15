@@ -46,6 +46,11 @@ function sv(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorag
 let ac;function au(){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume()}catch(e){}}
 function tone(f,d,t='sine',v=.15,s=0,f2){if(!ac)return;const o=ac.createOscillator(),g=ac.createGain(),n=ac.currentTime+s;o.type=t;o.frequency.setValueAtTime(f,n);if(f2)o.frequency.exponentialRampToValueAtTime(f2,n+d);g.gain.setValueAtTime(v,n);g.gain.exponentialRampToValueAtTime(.001,n+d);o.connect(g);g.connect(ac.destination);o.start(n);o.stop(n+d)}
 const SFX={jump:()=>tone(300,.18,'square',.1,0,700),throw:()=>tone(700,.15,'triangle',.12,0,300),catch:()=>{tone(660,.1,'sine',.18);tone(990,.16,'sine',.18,.08)},miss:()=>tone(220,.3,'sawtooth',.1,0,90),hit:()=>tone(160,.25,'square',.15,0,60),tap:()=>tone(520,.05,'triangle',.08),win:()=>[523,659,784,1046].forEach((f,i)=>tone(f,.25,'triangle',.16,i*.13)),cd:()=>tone(440,.12,'square',.1)};
+// ---- backsound lari (suara langkah) ----
+let nbuf=null,fsAlt=0;
+function stepSnd(v){return;try{if(!nbuf){const n=ac.sampleRate*.12|0,b=ac.createBuffer(1,n,ac.sampleRate),d=b.getChannelData(0);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,3);nbuf=b}
+const so=ac.createBufferSource(),f=ac.createBiquadFilter(),ga=ac.createGain();so.buffer=nbuf;so.playbackRate.value=.85+Math.random()*.4;f.type='bandpass';f.frequency.value=(fsAlt?1300:1000)+Math.random()*300;f.Q.value=.7;ga.gain.value=v*(.8+Math.random()*.4);so.connect(f);f.connect(ga);ga.connect(ac.destination);so.start();fsAlt^=1;tone(fsAlt?95:80,.08,'sine',v*.6,0,50)}catch(e){}}
+function foot(g,dt,on,v,iv){g.fs=(g.fs||0)-dt;if(on){if(g.fs<=0){stepSnd(v||.3);g.fs=iv||.2}}else if(g.fs<0)g.fs=0}
 // ---------- ONLINE (PeerJS: WebRTC P2P, data langsung antar HP) ----------
 const net={on:false,host:false,peer:null,conn:null,gid:0,ls:0,last:0,fp:0,tok:0,iv:null,lp:null,code:''};
 const PFX='firkihesti-v1-';
@@ -205,7 +210,7 @@ function baca(){modal('<h2>📖 Baca Ini</h2><p>Yayang acu main game yok. Nanti 
 // ---------- game shell ----------
 function stop(){cancelAnimationFrame(raf);lid++;raf=0;G=null;cv.onpointerdown=null;stopAudio()}
 function game(k){au();stop();close();scr.style.display='none';cv.style.display='block';back.style.display='block';back.onclick=()=>{stop();go(mode==='S'?'mS':'mP')};
- if(k==='g3'){cv.style.display='none';ctl.style.display='none';box3();return}
+ if(k==='g3'){cv.style.display='none';ctl.style.display='none';back.style.display='none';box3();return}
  const fit=()=>{const r=app.getBoundingClientRect(),d=Math.min(2,window.devicePixelRatio||1);cv.width=W*d*1.0;cv.height=H*d;ctx.setTransform(cv.width/W,0,0,cv.height/H,0,0)};fit();
  if(k==='g1')startHeart();else startChase()}
 function ctls(items){ctl.innerHTML='';ctl.style.display='flex';items.forEach(r=>{const row=document.createElement('div');row.style.cssText='display:flex;gap:2vw;width:100%';r.forEach(([t,key,cls])=>{const b=document.createElement('button');b.className='c '+(cls||'');b.textContent=t;const dn=e=>{e.preventDefault();try{b.setPointerCapture(e.pointerId)}catch(_){}G&&(G.k[key]=1,G.p[key]=1);net.inp(key,1);b.classList.add('on');try{navigator.vibrate&&navigator.vibrate(10)}catch(_){}},up=e=>{e.preventDefault();G&&(G.k[key]=0);net.inp(key,0);b.classList.remove('on')};b.addEventListener('pointerdown',dn);['pointerup','pointercancel','lostpointercapture'].forEach(v=>b.addEventListener(v,up));b.addEventListener('contextmenu',e=>e.preventDefault());row.appendChild(b)});ctl.appendChild(row)})}
@@ -254,7 +259,7 @@ function startHeart(){close();cv.onpointerdown=null;const duo=mode==='P',S=mkSce
    if(duo){if(g.score>=50){g.state='fin';g.winner='h'}else if(g.miss>=50){g.state='over2'}}else{if(g.score>=50){g.state='fin'}else if(g.lives<=0)over(['💀 Game Over','Kamu kehabisan nyawa, coba lagi yayang!'])}
    if(g.state==='over2'){firkiWin();net.send({t:'ev',e:'fw'})}
   }
-  if(duo)snapH(g);drawScene(g.S,dt,gy,0);g.S.off=g.off;drawGround(g.S,gy,g.off*.0);ctx.save();ctx.drawImage(g.S.gi,0,by-6,W,50);ctx.restore();
+  foot(g,dt,g.state==='play'&&!g.gs&&(g.k.l||g.k.r),.28,.2);if(duo)snapH(g);drawScene(g.S,dt,gy,0);g.S.off=g.off;drawGround(g.S,gy,g.off*.0);ctx.save();ctx.drawImage(g.S.gi,0,by-6,W,50);ctx.restore();
   hearts: (g.state==='fin'?[]:g.hearts).forEach(h=>{const f=Math.min(HM.n-1,Math.floor(h.a)%HM.n);ctx.drawImage(IM.hearts,f*HM.cw,0,HM.cw,HM.ch,h.x-HM.cw*.28,h.y-HM.ch*.55,HM.cw*.56,HM.ch*.56)});
   // boy
   const bk=g.bdir>0?'R':'L';const bf=g.th>0?'mthrow':(duo?((g.k.l2||g.k.r2)?'mrun':'midle'):(g.state==='play'&&Math.abs(g.tx-g.bx)>6?'mrun':'midle'));
@@ -275,7 +280,7 @@ function startChase(){const duo=mode==='P';
  modal('<h2>🏃 Kejar Firki</h2><p>yayang tangkap acu yah nanti kalo yayang berhasil nangkap acu nanti yayang buka rahasia dan hadiah. Jika yayang menang mode mudah membuka rahasia sedangkan yayang menang mode sulit mendapatkan hadiah.</p><button class="btn g" id="e">Mode Mudah</button><button class="btn" id="h">Mode Sulit</button><button class="btn b" id="m">Kembali</button>');
  $('#e').onclick=()=>{close();runChase('easy')};$('#h').onclick=()=>{close();runChase('hard')};$('#m').onclick=()=>go('mS')}
 function runChase(md){close();const duo=md==='duo',hard=md==='hard',S=mkScene(2),gy=760;
- G={k:{},p:{},S,md,state:'cd',cd:duo?4:3,cn:9,ft:0,t:0,taps:0,drift:0,run:0,gx:0,bx:duo?260:hard?315:0,gv:0,bv:0,gyo:0,gvy:0,byo:0,bvy:0,lives:3,inv:0,slow:0,sp:[],nsp:700,off:0,goff:0,dist:100,hkm:0,walk:0,bwalk:0,holdT:2,direct:1,btaps:0,gap:hard?315:260};
+ G={k:{},p:{},S,md,state:'cd',cd:duo?4:3,cn:9,ft:0,t:0,taps:0,drift:0,run:0,gx:0,bx:duo?260:hard?315:0,gv:0,bv:0,gyo:0,gvy:0,byo:0,bvy:0,lives:3,inv:0,slow:0,sp:[],pits:[],fy:0,fvy:0,nsp:700,off:0,goff:0,dist:100,hkm:0,walk:0,bwalk:0,holdT:2,direct:1,btaps:0,gap:hard?315:260};
  const tapb=()=>{G.p.t=1;G.p.t2=1};
  G.kind='g2';G.gid=net.gid;G.gs=duo&&net.on&&!net.host;
  if(duo)ctls(net.host?[[['👧 HESTI TAP!','t','act']]]:[[['👦 FIRKI TAP!','t2','o act']]]);else if(hard)ctls([[['⤴ LONCAT','a','act']]]);else ctls([[['👆 TAP TAP!','t','act']]]);
@@ -285,40 +290,45 @@ function runChase(md){close();const duo=md==='duo',hard=md==='hard',S=mkScene(2)
   $('#a1').onclick=()=>duo?pick('g2'):hard?hadiah1():secret2();$('#a2').onclick=()=>go(duo?'mP':'mS');if(!duo)cnt()};
  function lose(t,m,again){G.state='over';G.inv=0;SFX.miss();modal('<h2>💀 '+t+'</h2><p>'+m+'</p><button class="btn" id="a1">Main Lagi</button><button class="btn b" id="a2">Main Menu</button>');$('#a1').onclick=again;$('#a2').onclick=()=>go('mS')}
  function over(){G.state='over';G.inv=0;SFX.miss();modal('<h2>💀 Game Over</h2><p>Nyawa habis, Firki kabur!</p><button class="btn" id="a1">Main Lagi</button><button class="btn b" id="a2">Main Menu</button>');$('#a1').onclick=()=>{close();runChase('hard')};$('#a2').onclick=()=>go('mS')}
- loop(dt=>{const g=G;g.t+=dt;ctx.clearRect(0,0,W,H);let gdx=0;
+ function fallOver(){G.state='over';G.inv=0;modal('<h2>🕳️ Jatuh ke Lubang!</h2><p>Hesti jatuh ke lubang tanah, Firki kabur! Game over.</p><button class="btn" id="a1">Main Lagi</button><button class="btn b" id="a2">Main Menu</button>');$('#a1').onclick=()=>{close();runChase('hard')};$('#a2').onclick=()=>go('mS')}
+loop(dt=>{const g=G;g.t+=dt;ctx.clearRect(0,0,W,H);let gdx=0;
   if(g.state==='play'){
    if(duo&&g.gs){g.gv*=Math.exp(-2.2*dt);g.bv*=Math.exp(-2.2*dt);g.gx+=g.gv*dt;g.bx+=g.bv*dt;g.gap=g.bx-g.gx}
    else if(duo){if(g.p.t){g.gv=Math.min(520,g.gv+38);SFX.tap()}if(g.p.t2){g.bv=Math.min(520,g.bv+38)}g.gv*=Math.exp(-2.2*dt);g.bv*=Math.exp(-2.2*dt);g.gx+=g.gv*dt;g.bx+=g.bv*dt;g.gap=g.bx-g.gx;
     if(g.gap<45){g.state='fin';g.winner='h'}else if(g.gap>5045){g.state='fin';g.winner='f'}}
-   else if(!hard){if(g.p.t){g.taps=Math.min(50,g.taps+1.2);g.run=.3;SFX.tap()}g.run-=dt;g.taps=Math.max(0,g.taps-(g.run>0?3:8)*dt);
-    g.dist=Math.max(0,g.dist+(36-g.taps*1.2)*dt);g.gap=55+g.dist*1.3;if(g.run>0)gdx=300*dt;
-    if(g.dist<=0){g.state='fin';g.winner='h';g.taps=Math.max(g.taps,50)}else if(g.dist>=500){lose('Firki Kabur!','Firki sudah sejauh 500 km dari Hesti 😄',()=>runChase('easy'))}}
+   else if(!hard){g.tp=g.tp||[];if(g.p.t){g.tp.push(g.t);g.run=.3;SFX.tap()}g.run-=dt;g.tp=g.tp.filter(x=>g.t-x<1);g.tr=Math.min(14,g.tp.length);
+    g.dist=Math.max(0,g.dist+(36-g.tr*6.5)*dt);g.gap=55+g.dist*1.3;if(g.run>0)gdx=Math.min(520,g.tr*38)*dt;
+    if(g.dist<=0){g.state='fin';g.winner='h'}else if(g.dist>=1000){lose('Firki Kabur!','Firki sudah mencapai 1000 km dari Hesti 😄',()=>runChase('easy'))}}
    else{ // hard
     g.slow-=dt;g.inv-=dt;const f=1+Math.min(.6,Math.max(0,g.hkm-30)*.012),base=g.slow>0?100:205,S=base*f,close=base-185;g.f=f;g.spd=S;g.gv=S;g.hkm+=S*dt*.02;g.gx+=S*dt;g.bx+=(S-close)*dt;gdx=S*dt;g.bsp=(S-close)*.9;g.bspd=S-close;
     if(g.p.a&&g.gyo===0){g.gvy=-640;SFX.jump()}
     {const n=Math.max(1,Math.ceil(dt*120)),h=dt/n;for(let q=0;q<n;q++){g.gvy+=1800*h;g.gyo=Math.min(0,g.gyo+g.gvy*h);if(g.gyo===0)g.gvy=0;
      }}
-    if(!g.bj){const f0=g.sp.find(s=>s>g.bx+20);if(f0!==undefined){const grp=[f0];for(const s of g.sp){if(s>f0&&s-grp[grp.length-1]<90)grp.push(s);else if(s>grp[grp.length-1])break}const span=76+grp[grp.length-1]-f0,D=Math.max(.711*(g.bspd||185),(span+12)/.8386),c=(f0+grp[grp.length-1])/2;if(c-g.bx<=D/2)g.bj={x0:c-D/2,D}}}
+    if(!g.bj){const ob=g.sp.concat(g.pits.flatMap(p=>[p.x-40,p.x,p.x+40])).sort((a,b)=>a-b);const f0=ob.find(s=>s>g.bx+20);if(f0!==undefined){const grp=[f0];for(const s of ob){if(s>f0&&s-grp[grp.length-1]<90)grp.push(s);else if(s>grp[grp.length-1])break}const span=76+grp[grp.length-1]-f0,D=Math.max(.711*(g.bspd||185),(span+12)/.8386),c=(f0+grp[grp.length-1])/2;if(c-g.bx<=D/2)g.bj={x0:c-D/2,D}}}
     if(g.bj){const u=(g.bx-g.bj.x0)/g.bj.D;if(u>=1){g.bj=null;g.byo=0;g.bvy=0}else{g.byo=-456*u*(1-u);g.bvy=u<.5?-1:1}}
-    while(g.nsp<Math.max(g.bx+120,g.gx+W-70)){const km=500*Math.pow(Math.max(0,(g.gap-42)/273),2);g.sp.push(g.nsp);if(km<=50){const r=R(),n=r<.15?1:r<.55?2:3;for(let i=1;i<n;i++){g.nsp+=rr(14,18);g.sp.push(g.nsp)}g.nsp+=rr(190,240)}else if(km<=300){if(R()<.7){g.sp.push(g.nsp+rr(26,30));g.nsp+=28}g.nsp+=rr(240,300)}else g.nsp+=rr(380,720)}g.sp=g.sp.filter(s=>s>g.gx-300);
+    while(g.nsp<Math.max(g.bx+120,g.gx+W-70)){const km=1000*Math.pow(Math.max(0,(g.gap-42)/273),2);g.sp.push(g.nsp);if(km<=200&&R()<.4){g.sp.pop();g.pits.push({x:g.nsp,w:90});g.nsp+=rr(250,330)}else if(km<=700){const r=R(),n=km<=200?(r<.2?1:r<.55?2:3):(r<.25?1:r<.6?2:3);for(let i=1;i<n;i++){g.nsp+=rr(14,18);g.sp.push(g.nsp)}g.nsp+=km<=200?rr(190,240):rr(210,260)}else g.nsp+=rr(380,720)}g.sp=g.sp.filter(s=>s>g.gx-300);g.pits=g.pits.filter(p=>p.x>g.gx-300);
     if(g.inv<=0&&g.sp.some(s=>Math.abs(s-g.gx)<38)&&g.gyo>-34){g.lives--;g.slow=1.4;g.inv=1.3;SFX.hit();if(g.lives<=0)over()}
-    g.gap=g.bx-g.gx;if(g.state==='play'&&g.gap<42){g.state='fin';g.winner='h'}}
+    if(g.state==='play'&&g.gyo>-22){const pt=g.pits.find(p=>Math.abs(p.x-g.gx)<28);if(pt){g.state='fall';g.fy=0;g.fvy=80;g.pitx=pt.x;SFX.miss()}}
+     g.gap=g.bx-g.gx;if(g.state==='play'&&g.gap<42){g.state='fin';g.winner='h'}}
    g.goff+=duo?g.gv*dt:gdx;g.off+=duo?Math.max(g.gv,g.bv)*dt:hard?Math.max(gdx,185*(g.f||1)*dt):Math.max(340*dt,gdx);g.walk+=dt*(duo?(g.gv>12?Math.min(20,8+g.gv/40):0):hard?20:(g.run>0?20:0));g.bwalk+=dt*(duo?(g.bv>12?Math.min(20,8+g.bv/40):0):20);
   }
-  if(duo)snapC(g);g.S.off=g.off;drawScene(g.S,dt,gy,0);drawGround(g.S,gy,g.goff);
+  foot(g,dt,g.state==='play'&&(hard||(duo?g.gv>12:g.run>0)),.3,hard?Math.max(.14,.21/(g.f||1)):duo?.2:Math.max(.15,.3-(g.tr||0)*.012));
+   if(g.state==='fall'){g.fvy+=1700*dt;g.fy+=g.fvy*dt;g.walk=0;if(g.fy>330&&!g.fend){g.fend=1;fallOver()}}
+   if(duo)snapC(g);g.S.off=g.off;drawScene(g.S,dt,gy,0);drawGround(g.S,gy,g.goff);
   const gsx=150,bsx=cl(gsx+(duo||hard?g.gap:g.gap)*(duo?.5:hard?1:1),gsx,W-70);
-  if(hard)g.sp.forEach(s=>{const x=gsx+(s-g.gx);if(x>-60&&x<W+60){const im=IM.spike;ctx.drawImage(im,x-im.width*.4,gy-im.height*.8+4,im.width*.8,im.height*.8)}});
+  if(hard)g.pits.forEach(p=>{const x=gsx+(p.x-g.gx);if(x>-80&&x<W+80){const gr=ctx.createLinearGradient(0,gy-6,0,H);gr.addColorStop(0,'#2a170a');gr.addColorStop(1,'#000');ctx.fillStyle=gr;ctx.fillRect(x-p.w/2,gy-6,p.w,H-gy+6);ctx.fillStyle='#8a5a2e';ctx.fillRect(x-p.w/2-4,gy-6,4,16);ctx.fillRect(x+p.w/2,gy-6,4,16)}});
+   if(hard)g.sp.forEach(s=>{const x=gsx+(s-g.gx);if(x>-60&&x<W+60){const im=IM.spike;ctx.drawImage(im,x-im.width*.4,gy-im.height*.8+4,im.width*.8,im.height*.8)}});
   const gj=hard&&g.gyo<-2;
   if(g.state==='fin'){const bx=cl(gsx+g.gap,gsx,W-90);if(g.winner==='f'){g.ft+=dt;spr('K','midle',0,bx,gy,0,1.05);spr('K','fidle',0,gsx,gy,0,1.05);if(g.ft>1.2&&!g.end){g.end=1;g.onWin()}}else hugScene(g,dt,bx,gy,gsx)}
-  else{const off=hard?g.byo:0;spr('K',hard&&g.byo<-2?'mjump':(g.state==='cd'?'midle':duo?(g.bv>12?'mrun':'midle'):'mrun'),hard&&g.byo<-2?(g.bvy<0?1:4):(duo?g.bwalk:hard?g.walk:g.bwalk),bsx,gy+off,0,1.05);
+  else{const off=hard?g.byo:0;spr('K',hard&&g.byo<-2?'mjump':((g.state==='cd'||g.state==='fall')?'midle':duo?(g.bv>12?'mrun':'midle'):'mrun'),hard&&g.byo<-2?(g.bvy<0?1:4):(duo?g.bwalk:hard?g.walk:g.bwalk),bsx,gy+off,0,1.05);
    ctx.globalAlpha=(g.state==='play'&&g.inv>0&&Math.floor(g.t*14)%2)?.4:1;
-   spr('K',gj?'fjump':((g.state!=='cd'&&(hard||(duo?g.gv>12:g.run>0)))?'frun':'fidle'),gj?(g.gvy<0?1:4):g.walk,gsx,gy+(hard?g.gyo:0),0,1.05);ctx.globalAlpha=1}
+   if(g.state==='fall'||g.fy>0){ctx.save();ctx.beginPath();ctx.rect(0,0,W,gy-6);ctx.rect(gsx+(g.pitx-g.gx)-45,gy-6,90,H);ctx.clip();spr('K','fidle',0,gsx,gy+g.fy,0,1.05);ctx.restore()}else spr('K',gj?'fjump':((g.state!=='cd'&&(hard||(duo?g.gv>12:g.run>0)))?'frun':'fidle'),gj?(g.gvy<0?1:4):g.walk,gsx,gy+(hard?g.gyo:0),0,1.05);ctx.globalAlpha=1}
   if(hard&&g.state!=='fin'&&gsx+g.gap>W-60){ctx.globalAlpha=.6+.4*Math.sin(g.t*8);txt('▶',W-16,gy-90,40,'#ffeb3b');ctx.globalAlpha=1}
   if(!duo&&!hard&&g.state==='play'&&gsx+g.gap>W-70){ctx.globalAlpha=.6+.4*Math.sin(g.t*8);txt('▶',W-16,gy-90,40,'#ffeb3b');ctx.globalAlpha=1}
   if(duo&&g.state==='play'&&gsx+g.gap*.5>W-70){ctx.globalAlpha=.6+.4*Math.sin(g.t*8);txt('▶',W-16,gy-90,40,'#ffeb3b');ctx.globalAlpha=1}
   if(g.state!=='fin'){txt('Firki',bsx,gy-200+(hard?g.byo:0),22,'#8ec9ff');txt('Hesti',gsx,gy-200+(hard?g.gyo:0),22,'#ffb3d9')}
-  const dm=duo?Math.max(0,Math.round((g.gap-45)/10)):hard?Math.max(0,Math.ceil(500*Math.pow(Math.max(0,(g.gap-42)/273),2))):Math.ceil(g.dist??100);
-  txt('Jarak Firki: '+dm+' km',W/2,70,34,'#fff');if(!duo&&!hard)txt('Kecepatan Hesti: '+Math.round(g.taps)+' / 50',W/2,112,28,'#ffd54f');if(hard){lives(g.lives,60,112);txt('Hesti: '+Math.floor(g.hkm)+' km',W/2+50,112,26,'#ffd54f');if(g.state==='play'&&(g.f||1)>1.02)txt('⚡ Makin cepat!',W/2,150,28,'#ff8a65');if(g.state==='play'&&dm<=300&&dm>0)txt(dm<=50?'💀 Duri makin rapat!':'🔥 Duri bertubi-tubi!',W/2,188,28,dm<=50?'#ff1744':'#ff5252')}
+  const dm=duo?Math.max(0,Math.round((g.gap-45)/10)):hard?Math.max(0,Math.ceil(1000*Math.pow(Math.max(0,(g.gap-42)/273),2))):Math.ceil(g.dist??100);
+  txt('Jarak Firki: '+dm+' km',W/2,70,34,'#fff');if(hard){lives(g.lives,60,112);txt('Hesti: '+Math.floor(g.hkm)+' km',W/2+50,112,26,'#ffd54f');if(g.state==='play'&&(g.f||1)>1.02)txt('⚡ Makin cepat!',W/2,150,28,'#ff8a65');if(g.state==='play'&&dm<=700&&dm>0)txt(dm<=200?'🕳️ Awas lubang tanah!':'💀 Duri makin rapat!',W/2,188,28,dm<=200?'#ff1744':'#ff5252')}
   if(g.state==='cd')countdown(g,dt,()=>g.state='play')})}
 // ---------- GAME 3: bar bar ----------
 const PAIRS={1:['Berdoa nanti malem cama acu.','Firki harus cium istrinya 20x.'],2:['Yayang hayus pargoy geol 2x.','Firki hayus push up 10x.'],3:['Yayang hayus nurutin kemauan acu.','Firki hayus nurutin kemauan nya yayang.'],4:['Cium acu 20x yayang.','Firki tranfer 20 RB ke yayang.'],5:['Yayang hayus tahan marah 1 Minggu cama cuami nya.','Firki hayus turutin kemauannya istrinya.'],6:['Yayang hayus nyanyiin cuami nya.','Firki harus nyanyiin istrinya.']};
@@ -329,10 +339,10 @@ function box3(){const plays=+sv('fh_n')||0;let last=[];try{last=JSON.parse(sv('f
  sv('fh_last',JSON.stringify([r1,r2].filter(x=>x<4||x===6)));
  const rounds=[r1,r2],res=[];scr.style.display='block';scr.className='scr bg3';scr.style.backgroundImage='';
  function round(i){const p=PAIRS[rounds[i]],o=sh([0,1]);scr.innerHTML='<div style="padding:16vw 5vw 3vw;text-align:center;color:#a0124a"><h2 style="margin:0;font-size:6.5vw">🎁 Bar Bar Berhadiah</h2><p style="font-weight:900;font-size:4.2vw">BABAK '+(i+1)+' dari 2</p><p style="font-size:4.4vw;line-height:1.4">Pilih salah satu kotak rahasia yayang ❤️<br>Ingat, cuma boleh memilih satu kotak saja yah!</p><div class="mb" id="mb"></div><div id="rs" style="margin-top:4vw"></div></div>';
-  const mb=$('#mb');let done=0;o.forEach((ix,pos)=>{const b=document.createElement('div');b.className='box';b.innerHTML='<span class="q">🎁</span>';b.onclick=()=>{if(done)return;done=1;au();SFX.catch();const ot=mb.children[1-pos];b.className='box open pick';b.textContent='✅ '+p[ix];ot.className='box open dim';ot.textContent='ℹ️ Kotak lain: '+p[o[1-pos]];res.push([p[ix],p[o[1-pos]]]);$('#rs').innerHTML='<button class="btn g" id="nx">'+(i<1?'Lanjut Babak 2 ➜':'Lihat Ringkasan ➜')+'</button>';$('#nx').onclick=()=>i<1?round(1):summary()};mb.appendChild(b)})}
- function summary(){cnt();const msg=`Yayang acuu ❤️\nIni hasil pilihan rahasia yayang:\nBABAK 1\nPilihan yayang: ${res[0][0]}\nKotak yang tidak dipilih: ${res[0][1]}\nBABAK 2\nPilihan yayang: ${res[1][0]}\nKotak yang tidak dipilih: ${res[1][1]}\nYayang sudah menyelesaikan permainan Bar Bar ❤️`;
-  scr.innerHTML='<div style="padding:16vw 5vw 3vw;color:#6a1040;font-size:4vw;line-height:1.4;height:100%;overflow:auto"><h2 style="text-align:center;margin:0 0 2vw;color:#d81b60">📋 Ringkasan Pilihan</h2>'+[0,1].map(i=>`<div style="background:#fff;border-radius:4vw;padding:3vw;margin:2vw 0;box-shadow:0 1vw 3vw #e91e6340"><b>BABAK ${i+1}</b><br>✅ Pilihan: ${res[i][0]}<br>ℹ️ Tidak dipilih: ${res[i][1]}</div>`).join('')+'<button class="btn g" id="wa">KIRIM KE WA</button><p style="text-align:center;font-weight:700">Jangan bohong loh ingat meski yayang boong di acu gak boong sumpah dan janji yayang tidak bohong ke acu.</p><button class="btn b" id="ul">Main Lagi</button></div>';
-  $('#wa').onclick=()=>{window.open('https://wa.me/'+WA+'?text='+encodeURIComponent(msg),'_blank')};$('#ul').onclick=()=>box3()}
+  const mb=$('#mb');let done=0;o.forEach((ix,pos)=>{const b=document.createElement('div');b.className='box';b.innerHTML='<span class="q">🎁</span>';b.onclick=()=>{if(done)return;done=1;au();SFX.catch();const ot=mb.children[1-pos];b.className='box open pick';b.textContent='✅ '+p[ix];ot.className='box open dim';ot.textContent='ℹ️ Kotak lain: '+p[o[1-pos]];res.push([p[ix],p[o[1-pos]]]);if(i>=1){summary();return}$('#rs').innerHTML='<button class="btn g" id="nx">Lanjut Babak 2 ➜</button>';$('#nx').onclick=()=>round(1)};mb.appendChild(b)})}
+ function summary(){cnt();const msg=`Yayang acuu ❤️\nIni hasil pilihan rahasia yayang:\nBABAK 1\nPilihan yayang: ${res[0][0]}\nKotak yang tidak dipilih: ${res[0][1]}\nBABAK 2\nPilihan yayang: ${res[1][0]}\nKotak yang tidak dipilih: ${res[1][1]}\nYayang sudah menyelesaikan permainan Bar Bar ❤️`;setPend(msg);
+  scr.innerHTML='<div style="padding:16vw 5vw 3vw;color:#6a1040;font-size:4vw;line-height:1.4;height:100%;overflow:auto"><h2 style="text-align:center;margin:0 0 2vw;color:#d81b60">📋 Ringkasan Pilihan</h2>'+[0,1].map(i=>`<div style="background:#fff;border-radius:4vw;padding:3vw;margin:2vw 0;box-shadow:0 1vw 3vw #e91e6340"><b>BABAK ${i+1}</b><br>✅ Pilihan: ${res[i][0]}<br>ℹ️ Tidak dipilih: ${res[i][1]}</div>`).join('')+'<button class="btn g" id="wa">KIRIM KE WA</button><p style="text-align:center;font-weight:700">Jangan bohong loh ingat meski yayang boong di acu gak boong sumpah dan janji yayang tidak bohong ke acu.</p><button class="btn b" id="ul">🏠 Main Menu</button></div>';
+  $('#wa').onclick=()=>{lockGo();window.open('https://wa.me/'+WA+'?text='+encodeURIComponent(msg),'_blank')};$('#ul').onclick=()=>{go('mS');lkChk()}}
  round(0)}
 // ---------- RAHASIA & HADIAH ----------
 let aud=[];function stopAudio(){aud.forEach(a=>{try{a.pause();a.currentTime=0}catch(e){}});aud=[]}
@@ -354,7 +364,30 @@ function hadiah1(){shell('<h2 style="text-align:center;color:#d81b60">🎁 Hadia
 function koleksi(){const it=[['1','💌 Rahasia 1','Musik & kotak surat','Menangkan Tangkap Hatinya Firki',secret1],['2','📸 Rahasia 2','Album kenangan Firki','Menangkan Kejar Firki (Mudah)',secret2]];
  shell('<h2 style="text-align:center;color:#d81b60">🗂️ Koleksi Rahasia</h2><p style="text-align:center" class="sm">Menangkan game untuk membuka koleksi ❤️</p>'+it.map(x=>sv('fh_u'+x[0])?`<button class="btn" data-k="${x[0]}">${x[1]}<br><span style="font-size:3.4vw;font-weight:600">${x[2]}</span></button>`:`<div class="card" style="margin-top:3vw;opacity:.75;padding:3vw">🔒 ${x[1]}<br><span class="sm">${x[3]}</span></div>`).join(''));
  scr.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>it.find(x=>x[0]===b.dataset.k)[4]())}
+// ---------- ANTI CURANG (Bar Bar) + pesan awal ----------
+const ckGet=k=>{try{const m=document.cookie.match(new RegExp('(?:^|; )fh_'+k+'=([^;]*)'));return m?m[1]:null}catch(e){return null}};
+const ckSet=(k,v)=>{try{document.cookie='fh_'+k+'='+v+';max-age=315360000;path=/;SameSite=Lax'}catch(e){}};
+function flagGet(k){return sv('fh_'+k)==='1'||ckGet(k)==='1'}
+function flagSet(k,on){sv('fh_'+k,on?'1':'0');ckSet(k,on?'1':'0');idb('put',k,on?1:0)}
+['pend','go'].forEach(k=>idb('get',k).then(v=>{if(v===1&&!flagGet(k))flagSet(k,1)}));
+let left=0;
+function setPend(msg){sv('fh_msg',msg);idb('put','msg',msg);flagSet('go',0);flagSet('pend',1)}
+function lockGo(){left=0;flagSet('go',1)}
+function back2(){if(!document.hidden&&left&&flagGet('go')){flagSet('pend',0);flagSet('go',0);lkChk()}}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)left=1;else back2()});
+addEventListener('blur',()=>{if(flagGet('go'))left=1});addEventListener('focus',back2);addEventListener('pageshow',back2);
+let lk=null;
+function lkChk(){const need=flagGet('pend')&&!$('#wa');
+ if(need&&!lk){stop();stopAudio();lk=document.createElement('div');lk.id='lk';
+  lk.style.cssText='z-index:99;background:radial-gradient(#5a0010,#1a0005);display:flex;align-items:center;justify-content:center;padding:6%;text-align:center;color:#fff;pointer-events:auto';
+  lk.innerHTML='<div><div style="font-size:22vw">😡</div><h2 style="font-size:7vw;margin:2vw 0;color:#ffd54f">DETEKSI CURANG!</h2><p style="font-size:5vw;line-height:1.5;font-weight:900">yayang curang😡 tidak di kirim yayang tidak akan bisa main game ini lagi jika curang . Dan acu mayah loh 😡😡😡</p><p style="font-size:3.6vw;opacity:.85">Kirim ringkasan pilihan ke WA dulu yah, nanti pesan ini hilang sendiri.</p><button class="btn g" id="lkb">📲 Kirim ke WA Sekarang</button></div>';
+  app.appendChild(lk);
+  $('#lkb').onclick=()=>{lockGo();window.open('https://wa.me/'+WA+'?text='+encodeURIComponent(sv('fh_msg')||'Yayang acuu ❤️ Ini ringkasan pilihan Bar Bar yayang.'),'_blank')}}
+ else if(!need&&lk){lk.remove();lk=null}}
+setInterval(lkChk,500);
+function intro(){idb('get','intro').then(v=>{if(v===1||sv('fh_intro')==='1')return;sv('fh_intro','1');idb('put','intro',1);
+ modal('<h2>📢 Ingat Yah Yayang</h2><p>Sekarang game nya asli yayang. Jangan cuma game, tapi hadiah dan bar bar nya jadi nyata sekarang. Yayang ingat yah ❤️</p><button class="btn" id="ix">Siap Acu!</button>');$('#ix').onclick=close})}
 // ---------- start ----------
-loadAll(()=>{go('m0');loadPeer().catch(()=>{})});
+loadAll(()=>{go('m0');intro();lkChk();loadPeer().catch(()=>{})});
 })();
 </script></body></html>
